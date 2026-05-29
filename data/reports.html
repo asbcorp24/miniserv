@@ -81,7 +81,14 @@
           </div>
         </div>
         <div class="panel">
-          <div class="panel-title">Готовый отчёт в браузере</div>
+          <div class="d-flex justify-content-between align-items-center gap-2 flex-wrap mb-2">
+            <div class="panel-title mb-0">Готовый отчёт в браузере</div>
+            <div class="d-flex gap-2 flex-wrap">
+              <button class="btn btn-sm btn-outline-info" id="btnPrintReport">Печать</button>
+              <button class="btn btn-sm btn-outline-success" id="btnSaveReportHtml">Сохранить HTML</button>
+              <button class="btn btn-sm btn-outline-secondary" id="btnSaveReportJson">Сохранить JSON</button>
+            </div>
+          </div>
           <div class="bg-white text-dark rounded p-3" id="reportPreview">Отчёт ещё не сформирован</div>
         </div>
       </div>
