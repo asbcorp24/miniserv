@@ -43,7 +43,11 @@
               <button class="btn btn-sm btn-outline-info" type="button" id="addText">+ Текст</button>
               <button class="btn btn-sm btn-outline-info" type="button" id="addNtable">+ Значение {{name}}</button>
               <button class="btn btn-sm btn-outline-info" type="button" id="addTable">+ Таблица {{table[1]}}</button>
+              <button class="btn btn-sm btn-outline-warning" type="button" id="addFullTable">+ Полная таблица {{table:name}}</button>
               <button class="btn btn-sm btn-outline-secondary" type="button" id="addLine">+ Разделитель</button>
+            </div>
+            <div class="text-muted small mb-2">
+              Полная таблица печатает все строки из Lua: <code>{{table:volt}}</code>
             </div>
             <label class="form-label">HTML шаблон</label>
             <textarea class="form-control code-area mb-3" id="tplHtml" rows="18"></textarea>
