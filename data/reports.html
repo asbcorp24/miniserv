@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="ru" data-bs-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Отчёты</title>
+  <link href="/bootstrap.min.css" rel="stylesheet">
+  <link href="/style.css" rel="stylesheet">
+</head>
+<body>
+<div class="app-shell">
+  <header class="topbar">
+    <div>
+      <div class="eyebrow">ESP32 / SQLite / LUA / REPORTS</div>
+      <h1>Визуальный редактор отчётов</h1>
+    </div>
+    <div class="top-actions">
+      <a class="btn btn-outline-light btn-sm" href="/index.html">Админка</a>
+      <button class="btn btn-outline-info btn-sm" id="btnReload">Обновить</button>
+      <span class="status-pill" id="statusText">Готово</span>
+    </div>
+  </header>
+
+  <ul class="nav nav-pills section-tabs" role="tablist">
+    <li class="nav-item"><button class="nav-link active" data-bs-toggle="pill" data-bs-target="#tabTemplates" type="button">Шаблоны</button></li>
+    <li class="nav-item"><button class="nav-link" data-bs-toggle="pill" data-bs-target="#tabCurrent" type="button">Текущий отчёт</button></li>
+    <li class="nav-item"><button class="nav-link" data-bs-toggle="pill" data-bs-target="#tabHelp" type="button">Lua пример</button></li>
+  </ul>
+
+  <main class="tab-content mt-3">
+    <section class="tab-pane fade show active" id="tabTemplates">
+      <div class="grid-2">
+        <div class="panel">
+          <div class="panel-title">Шаблон</div>
+          <form id="templateForm">
+            <input type="hidden" id="tplId">
+            <label class="form-label">Название шаблона для send_otchet()</label>
+            <input class="form-control mb-2" id="tplName" placeholder="Электрический отчёт">
+            <label class="form-label">Заголовок</label>
+            <input class="form-control mb-2" id="tplTitle" placeholder="Отчёт измерений">
+            <div class="d-flex gap-2 flex-wrap mb-2">
+              <button class="btn btn-sm btn-outline-info" type="button" id="addHeader">+ Заголовок</button>
+              <button class="btn btn-sm btn-outline-info" type="button" id="addText">+ Текст</button>
+              <button class="btn btn-sm btn-outline-info" type="button" id="addNtable">+ Значение {{name}}</button>
+              <button class="btn btn-sm btn-outline-info" type="button" id="addTable">+ Таблица {{table[1]}}</button>
+              <button class="btn btn-sm btn-outline-secondary" type="button" id="addLine">+ Разделитель</button>
+            </div>
+            <label class="form-label">HTML шаблон</label>
+            <textarea class="form-control code-area mb-3" id="tplHtml" rows="18"></textarea>
+            <div class="d-flex gap-2 flex-wrap">
+              <button class="btn btn-info" type="submit">Сохранить шаблон</button>
+              <button class="btn btn-outline-light" type="button" id="btnPreviewTemplate">Предпросмотр</button>
+              <button class="btn btn-outline-secondary" type="button" id="btnNewTemplate">Новый</button>
+            </div>
+          </form>
+        </div>
+        <div class="panel table-panel">
+          <div class="table-head">
+            <div class="panel-title">Список шаблонов</div>
+            <input class="form-control search-input" id="templateSearch" placeholder="Поиск...">
+          </div>
+          <div class="table-responsive">
+            <table class="table table-dark table-hover align-middle compact-table">
+              <thead><tr><th>ID</th><th>Название</th><th>Заголовок</th><th></th></tr></thead>
+              <tbody id="templatesTable"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="tab-pane fade" id="tabCurrent">
+      <div class="grid-2">
+        <div class="panel">
+          <div class="panel-title">Данные текущего отчёта из RAM</div>
+          <div class="text-muted small mb-2">Lua заполняет RAM через add_ntable(), add_value(), send_otchet(). База не перезаписывается.</div>
+          <pre class="debug-result" id="currentJson">Нет данных</pre>
+          <div class="d-flex gap-2 flex-wrap mt-2">
+            <button class="btn btn-info" id="btnLoadCurrent">Получить текущий отчёт</button>
+            <button class="btn btn-outline-danger" id="btnClearCurrent">Очистить RAM отчёта</button>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="panel-title">Готовый отчёт в браузере</div>
+          <div class="bg-white text-dark rounded p-3" id="reportPreview">Отчёт ещё не сформирован</div>
+        </div>
+      </div>
+    </section>
+
+    <section class="tab-pane fade" id="tabHelp">
+      <div class="panel">
+        <div class="panel-title">Пример Lua</div>
+        <pre class="debug-result">add_ntable("amper", "23")
+add_ntable("temperature", "25.4 C")
+
+add_value("volt", 1, "12.1 V")
+add_value("volt", 2, "12.0 V")
+add_value("volt", 3, "11.9 V")
+
+local id = send_otchet("Электрический отчёт")
+print("report template id", id)</pre>
+      </div>
+    </section>
+  </main>
+</div>
+
+<div class="modal fade" id="previewModal" tabindex="-1">
+  <div class="modal-dialog modal-xl modal-dialog-scrollable">
+    <div class="modal-content bg-dark text-light">
+      <div class="modal-header">
+        <h5 class="modal-title">Предпросмотр</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body bg-white text-dark" id="previewBody"></div>
+    </div>
+  </div>
+</div>
+
+<script src="/bootstrap.bundle.min.js"></script>
+<script src="/reports.js"></script>
+</body>
+</html>
