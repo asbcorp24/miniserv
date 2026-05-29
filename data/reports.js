@@ -1,5 +1,6 @@
 let reportTemplates = [];
 let currentReport = null;
+let currentRenderedHtml = '';
 
 function setStatus(text) {
   const el = document.getElementById('statusText');
@@ -13,6 +14,31 @@ function escapeHtml(value) {
     .replaceAll('>', '&gt;')
     .replaceAll('"', '&quot;')
     .replaceAll("'", '&#039;');
+}
+
+function safeFileName(value) {
+  return String(value || 'report')
+    .replace(/[\\/:*?"<>|]+/g, '_')
+    .replace(/\s+/g, '_')
+    .substring(0, 80);
+}
+
+function nowFileStamp() {
+  const d = new Date();
+  const p = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}_${p(d.getHours())}-${p(d.getMinutes())}-${p(d.getSeconds())}`;
+}
+
+function downloadTextFile(filename, content, mimeType) {
+  const blob = new Blob([content], { type: mimeType || 'text/plain;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 async function apiGet(url) {
@@ -49,7 +75,6 @@ function renderReportTemplate(templateHtml, data) {
   const ntable = data?.ntable || {};
   const tables = data?.tables || {};
 
-  // Табличные значения: {{volt[1]}}
   html = html.replace(/\{\{\s*([a-zA-Z0-9_а-яА-ЯёЁ.-]+)\s*\[\s*(\d+)\s*\]\s*\}\}/g, function (_, tableName, row) {
     if (tables[tableName] && tables[tableName][row] !== undefined) {
       return escapeHtml(tables[tableName][row]);
@@ -57,7 +82,6 @@ function renderReportTemplate(templateHtml, data) {
     return '';
   });
 
-  // Обычные значения: {{amper}}
   html = html.replace(/\{\{\s*([a-zA-Z0-9_а-яА-ЯёЁ.-]+)\s*\}\}/g, function (_, key) {
     if (ntable[key] !== undefined) {
       return escapeHtml(ntable[key]);
@@ -163,12 +187,14 @@ async function loadCurrentReport() {
   document.getElementById('currentJson').textContent = JSON.stringify(currentReport, null, 2);
 
   if (!currentReport.ready) {
+    currentRenderedHtml = '';
     document.getElementById('reportPreview').innerHTML = '<div class="text-muted">Активного отчёта в RAM нет</div>';
     setStatus('Активного отчёта нет');
     return;
   }
 
-  document.getElementById('reportPreview').innerHTML = renderReportTemplate(currentReport.template_html, currentReport.data);
+  currentRenderedHtml = renderReportTemplate(currentReport.template_html, currentReport.data);
+  document.getElementById('reportPreview').innerHTML = currentRenderedHtml;
   setStatus('Отчёт сформирован в браузере');
 }
 
@@ -177,6 +203,58 @@ async function clearCurrentReport() {
   const res = await apiPost('/api/reports/current/clear', {});
   if (!res.ok) throw new Error(res.error || 'Ошибка очистки');
   await loadCurrentReport();
+}
+
+function getCurrentReportName() {
+  return currentReport?.report_name || document.getElementById('tplName')?.value || 'report';
+}
+
+function buildStandaloneReportHtml() {
+  const title = escapeHtml(getCurrentReportName());
+  const body = currentRenderedHtml || document.getElementById('reportPreview').innerHTML || '';
+  return `<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>${title}</title>
+<style>
+body{font-family:Arial,sans-serif;margin:24px;color:#111;background:#fff;}
+table{border-collapse:collapse;width:100%;margin:12px 0;}
+th,td{border:1px solid #444;padding:6px 8px;text-align:left;}
+th{background:#eee;}
+h1,h2,h3{margin-top:0;}
+.report-meta{font-size:12px;color:#666;margin-bottom:16px;}
+@media print{body{margin:12mm}.no-print{display:none!important}}
+</style>
+</head>
+<body>
+<div class="report-meta">Сформировано: ${escapeHtml(new Date().toLocaleString())}</div>
+${body}
+</body>
+</html>`;
+}
+
+function printCurrentReport() {
+  if (!currentRenderedHtml) return alert('Сначала нажмите «Получить текущий отчёт»');
+  const w = window.open('', '_blank');
+  if (!w) return alert('Браузер заблокировал окно печати');
+  w.document.open();
+  w.document.write(buildStandaloneReportHtml());
+  w.document.close();
+  w.focus();
+  setTimeout(() => w.print(), 300);
+}
+
+function saveCurrentReportHtml() {
+  if (!currentRenderedHtml) return alert('Сначала нажмите «Получить текущий отчёт»');
+  const filename = `${safeFileName(getCurrentReportName())}_${nowFileStamp()}.html`;
+  downloadTextFile(filename, buildStandaloneReportHtml(), 'text/html;charset=utf-8');
+}
+
+function saveCurrentReportJson() {
+  if (!currentReport || !currentReport.ready) return alert('Сначала нажмите «Получить текущий отчёт»');
+  const filename = `${safeFileName(getCurrentReportName())}_${nowFileStamp()}.json`;
+  downloadTextFile(filename, JSON.stringify(currentReport, null, 2), 'application/json;charset=utf-8');
 }
 
 function addHeaderBlock() {
@@ -221,6 +299,9 @@ function bindEvents() {
   document.getElementById('btnPreviewTemplate').addEventListener('click', previewTemplate);
   document.getElementById('btnLoadCurrent').addEventListener('click', loadCurrentReport);
   document.getElementById('btnClearCurrent').addEventListener('click', clearCurrentReport);
+  document.getElementById('btnPrintReport').addEventListener('click', printCurrentReport);
+  document.getElementById('btnSaveReportHtml').addEventListener('click', saveCurrentReportHtml);
+  document.getElementById('btnSaveReportJson').addEventListener('click', saveCurrentReportJson);
   document.getElementById('addHeader').addEventListener('click', addHeaderBlock);
   document.getElementById('addText').addEventListener('click', addTextBlock);
   document.getElementById('addNtable').addEventListener('click', addNtableBlock);
