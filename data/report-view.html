@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Просмотр текущего отчёта</title>
+  <style>
+    :root {
+      --bg: #080d16;
+      --panel: #111827;
+      --muted: #94a3b8;
+      --accent: #22d3ee;
+      --ok: #22c55e;
+      --warn: #f59e0b;
+      --danger: #ef4444;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: Arial, sans-serif;
+      background: radial-gradient(circle at top, #10203a 0, var(--bg) 45%, #020617 100%);
+      color: #e5e7eb;
+    }
+    .topbar {
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      padding: 12px 18px;
+      background: rgba(2, 6, 23, 0.92);
+      border-bottom: 1px solid rgba(148, 163, 184, 0.25);
+      backdrop-filter: blur(8px);
+    }
+    .title { font-size: 20px; font-weight: 700; }
+    .status { font-size: 13px; color: var(--muted); }
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      border: 1px solid rgba(148, 163, 184, 0.35);
+      border-radius: 999px;
+      padding: 6px 10px;
+      background: rgba(15, 23, 42, 0.75);
+      color: #e5e7eb;
+      font-size: 13px;
+      white-space: nowrap;
+    }
+    .dot {
+      width: 9px;
+      height: 9px;
+      border-radius: 999px;
+      background: var(--warn);
+      display: inline-block;
+    }
+    .dot.ok { background: var(--ok); }
+    .dot.bad { background: var(--danger); }
+    .actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+    button, a.btn {
+      border: 1px solid rgba(34, 211, 238, 0.55);
+      background: rgba(8, 145, 178, 0.15);
+      color: #e5e7eb;
+      border-radius: 10px;
+      padding: 8px 12px;
+      text-decoration: none;
+      cursor: pointer;
+      font-size: 14px;
+    }
+    button:hover, a.btn:hover { background: rgba(34, 211, 238, 0.24); }
+    main { padding: 18px; }
+    .wait {
+      max-width: 820px;
+      margin: 12vh auto 0;
+      text-align: center;
+      padding: 36px;
+      border: 1px solid rgba(148, 163, 184, 0.22);
+      background: rgba(15, 23, 42, 0.72);
+      border-radius: 18px;
+      box-shadow: 0 24px 80px rgba(0,0,0,0.25);
+    }
+    .wait h1 { margin: 0 0 12px; }
+    .wait p { color: var(--muted); line-height: 1.5; }
+    .report-wrap {
+      display: none;
+      max-width: 1100px;
+      margin: 0 auto;
+      background: #fff;
+      color: #111;
+      border-radius: 14px;
+      padding: 24px;
+      box-shadow: 0 24px 80px rgba(0,0,0,0.35);
+    }
+    .report-meta {
+      color: #666;
+      font-size: 13px;
+      margin-bottom: 16px;
+      border-bottom: 1px solid #ddd;
+      padding-bottom: 10px;
+    }
+    .report-body table {
+      border-collapse: collapse;
+      width: 100%;
+      margin: 12px 0;
+    }
+    .report-body th,
+    .report-body td {
+      border: 1px solid #444;
+      padding: 6px 8px;
+      text-align: left;
+    }
+    .report-body th { background: #eee; }
+    .report-body h1,
+    .report-body h2,
+    .report-body h3 { color: #111; }
+    .log {
+      max-width: 1100px;
+      margin: 14px auto 0;
+      color: var(--muted);
+      font-size: 12px;
+      white-space: pre-wrap;
+    }
+    @media print {
+      body { background: #fff; color: #111; }
+      .topbar, .wait, .log { display: none !important; }
+      main { padding: 0; }
+      .report-wrap {
+        display: block !important;
+        max-width: none;
+        margin: 0;
+        box-shadow: none;
+        border-radius: 0;
+        padding: 0;
+      }
+      table { page-break-inside: auto; }
+      tr { page-break-inside: avoid; page-break-after: auto; }
+      thead { display: table-header-group; }
+    }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <div>
+      <div class="title">Просмотр текущего отчёта</div>
+      <div class="status" id="statusText">Ожидание отчёта...</div>
+    </div>
+    <div class="actions">
+      <span class="pill"><span class="dot" id="wsDot"></span><span id="wsText">WS подключение...</span></span>
+      <button id="btnRefresh">Обновить</button>
+      <button id="btnPrint">Печать</button>
+      <button id="btnSaveHtml">Сохранить HTML</button>
+      <a class="btn" href="/reports.html">Редактор</a>
+    </div>
+  </header>
+
+  <main>
+    <section class="wait" id="waitBlock">
+      <h1>Отчёт ещё не готов</h1>
+      <p>Оставь эту страницу открытой. Когда Lua вызовет <b>send_otchet()</b>, страница получит уведомление по WebSocket и автоматически покажет текущий отчёт.</p>
+    </section>
+
+    <section class="report-wrap" id="reportWrap">
+      <div class="report-meta" id="reportMeta"></div>
+      <div class="report-body" id="reportBody"></div>
+    </section>
+
+    <div class="log" id="logBox"></div>
+  </main>
+
+  <script src="/report-view.js"></script>
+</body>
+</html>
