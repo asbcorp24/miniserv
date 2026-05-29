@@ -4,7 +4,7 @@
 #include <ArduinoJson.h>
 #include <LittleFS.h>
 #include <sqlite3.h>
-#include <WebServer_ESP32_W5500.h>
+#include <WebServer.h>
 
 extern WebServer server;
 extern sqlite3* db;
