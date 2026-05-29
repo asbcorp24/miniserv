@@ -70,13 +70,30 @@ function insertAtCursor(textarea, text) {
   textarea.setSelectionRange(pos, pos);
 }
 
+function sortedKeys(obj) {
+  return Object.keys(obj || {}).sort((a, b) => {
+    const an = Number(a);
+    const bn = Number(b);
+    if (!Number.isNaN(an) && !Number.isNaN(bn)) return an - bn;
+    return String(a).localeCompare(String(b));
+  });
+}
+
+function renderNTable(ntable) {
+  const keys = sortedKeys(ntable);
+  if (!keys.length) return '<div class="text-muted">Обычных значений add_ntable() нет</div>';
+
+  let html = '<table class="table table-bordered table-sm report-ntable">';
+  html += '<thead><tr><th>Параметр</th><th>Значение</th></tr></thead><tbody>';
+  keys.forEach(key => {
+    html += `<tr><td>${escapeHtml(key)}</td><td>${escapeHtml(ntable[key])}</td></tr>`;
+  });
+  html += '</tbody></table>';
+  return html;
+}
+
 function renderFullTable(tableName, tableData) {
-  const rows = Object.keys(tableData || {})
-    .map(k => ({ key: k, num: Number(k), value: tableData[k] }))
-    .sort((a, b) => {
-      if (!Number.isNaN(a.num) && !Number.isNaN(b.num)) return a.num - b.num;
-      return String(a.key).localeCompare(String(b.key));
-    });
+  const rows = sortedKeys(tableData).map(k => ({ key: k, value: tableData[k] }));
 
   if (!rows.length) {
     return `<div class="text-muted">Нет данных таблицы ${escapeHtml(tableName)}</div>`;
@@ -91,12 +108,39 @@ function renderFullTable(tableName, tableData) {
   return html;
 }
 
+function renderAllReportData(data) {
+  const ntable = data?.ntable || {};
+  const tables = data?.tables || {};
+  const tableNames = sortedKeys(tables);
+
+  let html = '<div class="report-all-data">';
+  html += '<h3>Общие значения</h3>';
+  html += renderNTable(ntable);
+
+  if (!tableNames.length) {
+    html += '<h3>Таблицы измерений</h3><div class="text-muted">Таблиц add_value() нет</div>';
+  } else {
+    tableNames.forEach(name => {
+      html += `<h3>${escapeHtml(name)}</h3>`;
+      html += renderFullTable(name, tables[name]);
+    });
+  }
+
+  html += '</div>';
+  return html;
+}
+
 function renderReportTemplate(templateHtml, data) {
   let html = templateHtml || '';
   const ntable = data?.ntable || {};
   const tables = data?.tables || {};
 
-  // Полная таблица: {{table:volt}} — печатает все строки, пришедшие через add_value("volt", row, value)
+  // Все данные отчёта: {{table:all}} — add_ntable() + все таблицы add_value()
+  html = html.replace(/\{\{\s*table\s*:\s*all\s*\}\}/gi, function () {
+    return renderAllReportData(data);
+  });
+
+  // Полная таблица: {{table:volt}} — все строки одной таблицы add_value("volt", row, value)
   html = html.replace(/\{\{\s*table\s*:\s*([a-zA-Z0-9_а-яА-ЯёЁ.-]+)\s*\}\}/g, function (_, tableName) {
     return renderFullTable(tableName, tables[tableName] || {});
   });
@@ -132,6 +176,11 @@ function sampleData() {
         '1': '12.1 V',
         '2': '12.0 V',
         '3': '11.9 V'
+      },
+      amper_table: {
+        '1': '22.9 A',
+        '2': '23.0 A',
+        '3': '23.1 A'
       }
     }
   };
@@ -141,7 +190,7 @@ function newTemplate() {
   document.getElementById('tplId').value = '';
   document.getElementById('tplName').value = 'Электрический отчёт';
   document.getElementById('tplTitle').value = 'Отчёт измерений';
-  document.getElementById('tplHtml').value = `<h2>Отчёт измерений</h2>\n\n<p><b>Ток:</b> {{amper}}</p>\n<p><b>Температура:</b> {{temperature}}</p>\n\n<h3>Полная таблица напряжения</h3>\n{{table:volt}}`;
+  document.getElementById('tplHtml').value = `<h2>Отчёт измерений</h2>\n\n<p><b>Ток:</b> {{amper}}</p>\n<p><b>Температура:</b> {{temperature}}</p>\n\n<h3>Все данные отчёта</h3>\n{{table:all}}`;
 }
 
 function editTemplate(id) {
@@ -323,6 +372,10 @@ function addFullTableBlock() {
   insertAtCursor(document.getElementById('tplHtml'), `\n<h3>${escapeHtml(title)}</h3>\n{{table:${table}}}\n`);
 }
 
+function addAllDataBlock() {
+  insertAtCursor(document.getElementById('tplHtml'), '\n<h3>Все данные отчёта</h3>\n{{table:all}}\n');
+}
+
 function addLineBlock() {
   insertAtCursor(document.getElementById('tplHtml'), '\n<hr>\n');
 }
@@ -342,6 +395,7 @@ function bindEvents() {
   document.getElementById('addNtable').addEventListener('click', addNtableBlock);
   document.getElementById('addTable').addEventListener('click', addTableBlock);
   document.getElementById('addFullTable').addEventListener('click', addFullTableBlock);
+  document.getElementById('addAllData').addEventListener('click', addAllDataBlock);
   document.getElementById('addLine').addEventListener('click', addLineBlock);
   document.getElementById('templateSearch').addEventListener('input', loadTemplates);
 }
