@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="ru" data-bs-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>DB Admin</title>
+  <link href="bootstrap.min.css" rel="stylesheet">
+  <link href="/style.css" rel="stylesheet">
+  <style>
+    .db-admin-wrap {
+      width: min(1680px, calc(100% - 28px));
+      margin: 0 auto;
+      padding: 24px 0 40px;
+    }
+
+    .db-admin-grid {
+      display: grid;
+      grid-template-columns: 320px minmax(0, 1fr);
+      gap: 18px;
+      margin-top: 18px;
+    }
+
+    .db-admin-stack {
+      display: grid;
+      gap: 18px;
+    }
+
+    .db-table-list {
+      display: grid;
+      gap: 8px;
+      max-height: 560px;
+      overflow: auto;
+    }
+
+    .db-table-item {
+      width: 100%;
+      text-align: left;
+      border: 1px solid rgba(112, 230, 255, 0.16);
+      border-radius: 14px;
+      background: rgba(5, 10, 18, 0.9);
+      color: var(--text);
+      padding: 12px 14px;
+    }
+
+    .db-table-item.active {
+      background: linear-gradient(135deg, rgba(39, 215, 255, 0.18), rgba(109, 255, 191, 0.16));
+      border-color: rgba(39, 215, 255, 0.45);
+    }
+
+    .db-table-meta,
+    .db-sql-result {
+      font-family: Consolas, Monaco, monospace;
+      font-size: 13px;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+    }
+
+    .db-data-table td,
+    .db-data-table th {
+      white-space: nowrap;
+    }
+
+    .db-data-table td {
+      max-width: 220px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .db-editor-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 12px;
+    }
+
+    @media (max-width: 1100px) {
+      .db-admin-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="db-admin-wrap">
+    <header class="topbar">
+      <div>
+        <div class="eyebrow">ESP32 / SQLite / DB Admin</div>
+        <h1>Редактор таблиц и сырые SQL-запросы</h1>
+      </div>
+      <div class="top-actions">
+        <a class="btn btn-outline-secondary btn-sm" href="/">В админку</a>
+        <a class="btn btn-outline-secondary btn-sm" href="/db.html">Импорт/экспорт</a>
+        <button class="btn btn-outline-info btn-sm" id="refreshTablesBtn" type="button">Обновить</button>
+        <span class="status-pill" id="statusText">Готово</span>
+      </div>
+    </header>
+
+    <main class="db-admin-grid">
+      <aside class="panel">
+        <div class="table-head">
+          <div class="panel-title mb-0">Таблицы</div>
+          <input class="form-control search-input" id="tableSearch" placeholder="Поиск...">
+        </div>
+        <div class="db-table-list" id="tablesList"></div>
+      </aside>
+
+      <section class="db-admin-stack">
+        <div class="panel">
+          <div class="table-head">
+            <div>
+              <div class="panel-title mb-1" id="currentTableTitle">Таблица не выбрана</div>
+              <div class="text-muted small">Структура и последние записи таблицы</div>
+            </div>
+            <div class="d-flex gap-2 flex-wrap">
+              <input class="form-control" id="rowLimit" type="number" min="1" max="300" value="100" style="width:110px">
+              <button class="btn btn-outline-info btn-sm" id="reloadCurrentTableBtn" type="button">Перечитать</button>
+              <button class="btn btn-info btn-sm" id="newRowBtn" type="button">Новая строка</button>
+            </div>
+          </div>
+          <pre class="debug-result db-table-meta" id="tableMeta">Выберите таблицу слева</pre>
+          <div class="table-responsive mt-3">
+            <table class="table table-dark table-hover align-middle compact-table db-data-table">
+              <thead id="tableDataHead"></thead>
+              <tbody id="tableDataBody"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="table-head">
+            <div>
+              <div class="panel-title mb-1">Редактор строки</div>
+              <div class="text-muted small">Кликните по строке в таблице или создайте новую</div>
+            </div>
+            <div class="d-flex gap-2 flex-wrap">
+              <button class="btn btn-info btn-sm" id="saveRowBtn" type="button">Сохранить строку</button>
+              <button class="btn btn-outline-danger btn-sm" id="deleteRowBtn" type="button">Удалить строку</button>
+            </div>
+          </div>
+          <div class="db-editor-grid" id="rowEditor"></div>
+        </div>
+
+        <div class="panel">
+          <div class="table-head">
+            <div>
+              <div class="panel-title mb-1">Сырой SQL</div>
+              <div class="text-muted small">Разрешён один SQL-запрос за раз</div>
+            </div>
+            <button class="btn btn-warning btn-sm" id="runSqlBtn" type="button">Выполнить SQL</button>
+          </div>
+          <textarea class="form-control code-area mb-3" id="sqlInput" rows="8" placeholder="SELECT * FROM devices LIMIT 10;"></textarea>
+          <pre class="debug-result db-sql-result" id="sqlResult">Результата пока нет</pre>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <div class="toast-container position-fixed bottom-0 end-0 p-3">
+    <div id="appToast" class="toast text-bg-dark border-info" role="alert">
+      <div class="toast-header bg-dark text-light border-secondary">
+        <strong class="me-auto">ESP32 DB Admin</strong>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="toast"></button>
+      </div>
+      <div class="toast-body" id="toastText">OK</div>
+    </div>
+  </div>
+
+  <script src="bootstrap.bundle.min.js"></script>
+  <script src="/db-admin.js"></script>
+</body>
+</html>

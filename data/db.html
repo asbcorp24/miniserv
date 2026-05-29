@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="ru" data-bs-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Импорт / экспорт БД</title>
+
+  <link href="bootstrap.min.css" rel="stylesheet">
+  <link href="/style.css" rel="stylesheet">
+</head>
+  <link href="/style.css" rel="stylesheet">
+
+  <style>
+    .db-page-wrap {
+      width: min(1180px, calc(100% - 28px));
+      margin: 0 auto;
+      padding: 24px 0 42px;
+    }
+
+    .db-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 18px;
+      margin-top: 18px;
+    }
+
+    .db-card {
+      border: 1px solid rgba(112, 230, 255, 0.16);
+      border-radius: 22px;
+      background: rgba(18, 28, 44, 0.92);
+      padding: 20px;
+      box-shadow: 0 18px 50px rgba(0, 0, 0, 0.28);
+    }
+
+    .db-card-full {
+      grid-column: 1 / -1;
+    }
+
+    .db-title {
+      font-size: 18px;
+      font-weight: 800;
+      margin-bottom: 14px;
+      color: #eaf7ff;
+    }
+
+    .db-info-row {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 9px 0;
+      border-bottom: 1px solid rgba(112, 230, 255, 0.10);
+      color: #d8eef9;
+    }
+
+    .db-info-row span:first-child {
+      color: #8fa9bd;
+    }
+
+    .db-result {
+      min-height: 260px;
+      margin: 0;
+      padding: 16px;
+      border: 1px solid rgba(112, 230, 255, 0.18);
+      border-radius: 16px;
+      background: rgba(5, 10, 18, 0.9);
+      color: #b9ffd8;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+      font-family: Consolas, Monaco, monospace;
+      font-size: 13px;
+    }
+
+    @media (max-width: 900px) {
+      .db-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="db-page-wrap">
+    <header class="topbar">
+      <div>
+        <div class="eyebrow">ESP32 / LittleFS / SQLite</div>
+        <h1>Импорт / экспорт базы данных</h1>
+      </div>
+      <div class="top-actions">
+        <a class="btn btn-outline-secondary btn-sm" href="/">← В админку</a>
+        <button class="btn btn-outline-info btn-sm" id="dbRefreshBtn" type="button">Обновить информацию</button>
+        <span class="status-pill" id="statusText">Готово</span>
+      </div>
+    </header>
+
+    <main class="db-grid">
+      <section class="db-card">
+        <div class="db-title">Состояние базы</div>
+
+        <div class="db-info-row">
+          <span>Файл app.db</span>
+          <b id="dbExists">—</b>
+        </div>
+
+        <div class="db-info-row">
+          <span>Размер app.db</span>
+          <b id="dbSize">—</b>
+        </div>
+
+        <div class="db-info-row">
+          <span>Backup</span>
+          <b id="dbBackup">—</b>
+        </div>
+
+        <div class="db-info-row">
+          <span>LittleFS занято</span>
+          <b id="dbFsUsage">—</b>
+        </div>
+      </section>
+
+      <section class="db-card">
+        <div class="db-title">Экспорт</div>
+        <div class="text-muted small mb-3">
+          Скачивание текущей базы SQLite из LittleFS. Файл можно сохранить на ПК и потом импортировать обратно.
+        </div>
+
+        <div class="d-flex gap-2 flex-wrap">
+          <button class="btn btn-info" id="dbExportBtn" type="button">Скачать app.db</button>
+          <button class="btn btn-outline-info" id="dbBackupExportBtn" type="button">Скачать backup</button>
+        </div>
+      </section>
+
+      <section class="db-card">
+        <div class="db-title">Импорт</div>
+        <div class="text-muted small mb-3">
+          Перед заменой текущая база будет сохранена в <b>/app_backup.db</b>.
+        </div>
+
+        <form id="dbImportForm">
+          <label class="form-label">Файл базы данных</label>
+          <input class="form-control mb-3" id="dbImportFile" type="file" accept=".db,.sqlite,.sqlite3,application/octet-stream">
+
+          <button class="btn btn-warning" type="submit">Импортировать и заменить БД</button>
+        </form>
+      </section>
+
+      <section class="db-card">
+        <div class="db-title">Восстановление</div>
+        <div class="text-muted small mb-3">
+          Если импорт прошёл неудачно, можно вернуть последнюю резервную копию.
+        </div>
+
+        <button class="btn btn-outline-danger" id="dbRestoreBackupBtn" type="button">Восстановить backup</button>
+      </section>
+
+      <section class="db-card db-card-full">
+        <div class="db-title">Результат операции</div>
+        <pre class="db-result" id="dbTransferResult">Операций пока не было</pre>
+      </section>
+    </main>
+  </div>
+
+  <div class="toast-container position-fixed bottom-0 end-0 p-3">
+    <div id="appToast" class="toast text-bg-dark border-info" role="alert">
+      <div class="toast-header bg-dark text-light border-secondary">
+        <strong class="me-auto">ESP32 DB</strong>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="toast"></button>
+      </div>
+      <div class="toast-body" id="toastText">OK</div>
+    </div>
+  </div>
+
+
+  <script src="bootstrap.bundle.min.js"></script>
+  <script src="/db.js"></script>
+</body>
+</html>

@@ -1,0 +1,204 @@
+Раздел команд для управленя генератором SMB100A 
+*RST 
+
+*IDN?
+
+OUTP:STAT OFF/ON отключение/включение выходного вч сигнала (выходная мощность) 
+
+SOUR:FREQ 5.002 GHz  выходная частота MHz GHz
+
+SOUR:POW:LEV:IMM:AMPL -30 dBm уровень выходной мощности  дБм (dBm), дБмкВ (dBµV), мВ (mV) мкВ (µV)
+
+SOUR:POW:ALC ON поддержка уровня выходной мощности  Auto Level Control ON/OFF/AUTO
+
+OUTP:AMOD AUTO аттенюатор переключается автоматически
+
+
+///////////////////////////////////////////////////////////
+Раздел команд для управленя генератором AnaPico RFSU40
+*RST 
+*CLS 
+
+*IDN?
+
+OUTP:STAT OFF/ON отключение/включение выходного вч сигнала (выходная мощность) 
+
+SOUR:FREQ 5.002 GHz  выходная частота MHz GHz
+
+SOUR:POW:LEV:IMM:AMPL -30 dBm уровень выходной мощности  дБм (dBm), дБмкВ (dBµV), мВ (mV) мкВ (µV)
+SOUR:POW:LEV:IMM:AMPL ? запрос с пробелом
+
+SOUR:POWer:ATT:AUTO ON/OFF/1/0 автоматическое включение аттенюатора
+
+
+
+///////////////////////////////////////////////////////////
+Раздел команд для управленя анализатор спектра FSW26
+Настройка анализатора шума коэффициент усиления
+*RST
+
+SYST:DISP:UPD ON //обновление диспления во время удаленного управления
+
+
+:INIT:CONT OFF
+:INST:CRE:NEW NOISE, 'PM5-8 NOISE'
+:INIT:CONT OFF
+:LAY:REM:WIND '3'       //удаление Y фактора
+:LAY:REM:WIND '4'       //удаление Y фактора
+:INIT:IMM:*WAI
+:LAY:ADD:WIND? '1',BEL,MTAB
+:CALC:MARK1:STAT ON
+:CALC:MARK1:X 28.495MHZ
+
+:CALC:MARK1:X?          //запрос текущей частоты на маркере
+:CALC:MARK:Y? GAIN      //запрос текущей коэф усиления на маркере
+:CALC:MARK:Y? NOIS      //запрос текущей коэф шума на маркере
+
+
+:SENS:CONF:MODE:DUT DOWN
+:SENS:CONF:MODE:SYST:LO FIX
+:SENS:CONF:MODE:SYST:LO:FREQ 7.0GHz
+:SENS:CORR:IREJ 999.99
+:DISP:WIND:TRAC:X:SCAL IF
+
+//:SENS:FREQ:START 6.944GHz
+//:SENS:FREQ:STOP 6.99GHz
+//:SENS:FREQ:POINTS 47
+//:SENS:FREQ:STEP 1MHz
+//все что выше ^ не нужно 
+//нужно ввести только значения таблицы
+:SENS:FREQ:TABL:DATA 6.944GHZ, 6.945GHZ, 6.946GHZ, 6.971505GHZ ....
+
+
+//настройки источника шума
+:SENS:CORR:ENR:SNS:AUTO:STAT OFF
+:SENS:CORR:ENR:MEAS:MODE TABL
+:SENS:CORR:ENR:MEAS:TABL:SEL 'KEYSIGHT 346C 000205495' установка
+:SENS:CORR:ENR:MEAS:TABL:SEL? ответ KEYSIGHT 346C 000205495
+:SENS:CORR:ENR:COMM ON
+:SENS:CORR:TEMP:CONT 0
+:SENS:CORR:TEMP 296.5
+
+//запуск процедуры коррекции
+:SENS:CORR:STAT ON      //запуск процедуры калибровки
+:SENS:CONF:CORR         //включение калибровочных параметров
+//нужно вставить ожидание на выполнение команды
+:INIT:IMM:*WAI
+
+//установка маркера
+
+
+
+
+
+//для измерения мощности через предустановки
+:SENS:POW:ACH:BWID:CHAN1 14KHZ //полоса для анализа мощности
+
+:SENS:FREQ:CENT 28.00MHZ
+:SENS:FREQ:SPAN 1MHz
+:CALC:MARK:FUNC:POW:SEL ACP
+:SENS:ADJ:LEV
+*WAI
+:CALC:MARK1:STAT ON
+:CALC:MARK1:MAX:PEAK
+:CALC:MARK1:STAT ON
+
+//Протестировано работает
+//Настройка режима работы измерение шума и коэффициента усиления
+*RST;
+:INST:CRE:NEW NOISE, 'PM5-8 NOISE';
+:LAY:REM:WIND '3';
+:LAY:REM:WIND '4';
+:LAY:ADD:WIND? '1',BEL,MTAB;
+:SENS:CONF:MODE:DUT DOWN;
+:SENS:CONF:MODE:SYST:LO FIX;
+:SENS:CONF:MODE:SYST:LO:FREQ 7.0GHz;
+:DISP:WIND:TRAC:X:SCAL IF;
+:SENS:FREQ:TABL:DATA 6.944GHZ, 6.945GHZ, 6.946GHZ,6.947GHZ,6.948GHZ,6.949GHZ,6.950GHZ,6.951GHZ,6.952GHZ,6.953GHZ,6.954GHZ,6.955GHZ,6.956GHZ,6.957GHZ,6.958GHZ,6.959GHZ,6.960GHZ,6.961GHZ,6.962GHZ,6.963GHZ,6.964GHZ,6.965GHZ,6.966GHZ,6.967GHZ,6.968GHZ,6.969GHZ,6.970GHZ,6.971505GHZ,6.972GHZ,6.973GHZ,6.974GHZ,6.975GHZ,6.976GHZ,6.977GHZ,6.978GHZ,6.979GHZ,6.980GHZ,6.981GHZ,6.982GHZ,6.983GHZ,6.984GHZ,6.985GHZ,6.986GHZ,6.987GHZ,6.988GHZ,6.989GHZ,6.990GHZ;
+:CALC:MARK1:STAT ON;
+:CALC:MARK1:X 28.495MHZ;
+:SENS:CORR:ENR:SNS:AUTO:STAT OFF;
+:SENS:CORR:ENR:MEAS:MODE TABL;
+:SENS:CORR:ENR:MEAS:TABL:SEL 'KEYSIGHT 346C 000205495';
+:SENS:CORR:ENR:COMM ON;
+:SENS:CORR:TEMP:CONT 0;
+:SENS:CORR:TEMP 296.5;
+:SENS:CORR:STAT ON;
+:SENS:CONF:CORR;
+:INIT:IMM;
+*WAI;
+:INIT:CONT ON;
+:SYST:DISP:UPD ON;
+
+
+
+
+
+   <option value="SM=1.00">SM=1.00 "Вход 1 ->| Выход отключен"</option>        
+   <option value="SM=1.01">SM=1.01 "Вход 1 -> Выход 1"</option>
+   <option value="SM=1.02">SM=1.02 "Вход 1 -> Выход 2"</option>
+   <option value="SM=1.03">SM=1.03 "Вход 1 -> Выход 3"</option>
+   <option value="SM=1.02">SM=1.04 "Вход 1 -> Выход 4"</option>
+   <option value="SM=1.05">SM=1.05 "Вход 1 -> Выход 5"</option>
+   <option value="SM=1.06">SM=1.06 "Вход 1 -> Выход 6"</option> 
+  
+   <option value="SM=2.00">SM=2.00 "Вход 2 ->| Выход отключен"</option>        
+   <option value="SM=2.01">SM=2.01 "Вход 2 -> Выход 1"</option>
+   <option value="SM=2.02">SM=2.02 "Вход 2 -> Выход 2"</option>
+   <option value="SM=2.03">SM=2.03 "Вход 2 -> Выход 3"</option>
+   <option value="SM=2.02">SM=2.04 "Вход 2 -> Выход 4"</option>
+   <option value="SM=2.05">SM=2.05 "Вход 2 -> Выход 5"</option>
+   <option value="SM=2.06">SM=2.06 "Вход 2 -> Выход 6"</option>  
+ 
+
+ <option value="*IDN?">  *IDN? "Запрос идентификатора"</option>        
+ <option value="IP?">    IP? "Запрос сетевых настроек"</option> 
+
+ <option value="SM=1.00">SM=1.00 "Вход 1 ->| Выход отключен"</option>        
+ <option value="SM=1.02">SM=1.02 "Вход 1 -> Выход 2"</option>
+ <option value="SM=1.03">SM=1.03 "Вход 1 -> Выход 3"</option>
+ <option value="SM=1.05">SM=1.05 "Вход 1 -> Выход 5"</option>
+ <option value="SM=1.06">SM=1.06 "Вход 1 -> Выход 6"</option> 
+
+ <option value="SM=2.00">SM=2.00 "Вход 2 ->| Выход отключен"</option>        
+ <option value="SM=2.02">SM=2.02 "Вход 2 -> Выход 2"</option>
+ <option value="SM=2.03">SM=2.03 "Вход 2 -> Выход 3"</option>
+ <option value="SM=2.05">SM=2.05 "Вход 2 -> Выход 5"</option>
+ <option value="SM=2.06">SM=2.06 "Вход 2 -> Выход 6"</option> 
+
+
+
+ Источник питания PRF7100L
+
+ SOUR:VOLT:LEV:IMM:AMPL 5    //установка напряжения 
+ SOUR:VOLT:LEV:IMM:AMPL?     //запрос установки
+
+
+ SOUR:CURR:LEV:IMM:AMPL 2.22 //установка тока ограничения
+ SOUR:CURR:LEV:IMM:AMPL?    //запрос установки
+
+:SOUR:MODE CC CV OFF     //источник тока, напряжения, 
+:SOUR:MODE?              //запрос установки
+
+
+SOUR:CURR:PROT:LEV 5    //ограничение на установку максимального тока пример 5 А
+SOUR:CURR:PROT:LEV?     //запрос установки
+
+SOUR:VOLT:PROT:LEV 20   //ограничение на установку максимального напряжения пример 20 В
+SOUR:VOLT:PROT:LEV?     //запрос установки
+
+
+
+OUTP:STAT:IMM ON/OFF/1/0  //включение выходного напряжения
+OUTP:STAT:IMM?           //запрос статуса
+
+OUTPut:PROTection:CLEar   //отключение режима срабатывания защиты, когда включен аларм
+
+OUTPut:PROTection:TRIPped?  //запрос состояния защиты, сработала или нет
+
+
+//Тест по конфигурации источника питания  PRF7100L
+//работает только так с двоеточиями перед второй и последующими командами
+*RST;:SOUR:VOLT:PROT:LEV 6.25;:SOUR:CURR:PROT:LEV 1.5;:SOUR:VOLT:LEV:IMM:AMPL 6.00;:SOUR:CURR:LEV:IMM:AMPL 1.25
+
+
