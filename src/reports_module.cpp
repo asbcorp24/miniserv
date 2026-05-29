@@ -5,6 +5,7 @@
 #include <LittleFS.h>
 #include <sqlite3.h>
 #include <WebServer.h>
+#include <WebSocketsServer.h>
 
 extern WebServer server;
 extern sqlite3* db;
@@ -13,6 +14,7 @@ extern sqlite3* db;
 #define REPORT_MAX_TABLE_VALUES 160
 #define REPORT_MAX_NAME_LEN 40
 #define REPORT_MAX_VALUE_LEN 160
+#define REPORT_WS_PORT 81
 
 struct ReportNTableValue { String key; String value; bool used; };
 struct ReportTableValue { String table; int row; String value; bool used; };
@@ -23,11 +25,15 @@ struct ActiveReportState {
   String templateHtml;
   String editorJson;
   unsigned long createdMs;
+  uint32_t version;
   ReportNTableValue ntable[REPORT_MAX_NTABLE_VALUES];
   ReportTableValue tables[REPORT_MAX_TABLE_VALUES];
 };
 
 static ActiveReportState g_report;
+static WebSocketsServer reportWs(REPORT_WS_PORT);
+static bool reportWsStarted = false;
+static uint32_t reportVersionCounter = 0;
 
 static String reportJsonEscape(const String& s) {
   String out; out.reserve(s.length() + 16);
@@ -77,6 +83,41 @@ static bool bindText(sqlite3_stmt* stmt, int idx, const String& v) {
   return sqlite3_bind_text(stmt, idx, v.c_str(), -1, SQLITE_TRANSIENT) == SQLITE_OK;
 }
 
+static String reportStatusEventJson(const char* type) {
+  String json = "{\"type\":\"" + String(type) + "\"";
+  json += ",\"ready\":" + String(g_report.ready ? "true" : "false");
+  json += ",\"version\":" + String(g_report.version);
+  json += ",\"template_id\":" + String(g_report.templateId);
+  json += ",\"report_name\":\"" + reportJsonEscape(g_report.reportName) + "\"";
+  json += ",\"created_ms\":" + String(g_report.createdMs);
+  json += "}";
+  return json;
+}
+
+static void reportBroadcastReady() {
+  if (!reportWsStarted) return;
+  reportWs.broadcastTXT(reportStatusEventJson("report_ready"));
+}
+
+static void reportWsEvent(uint8_t num, WStype_t type, uint8_t* payload, size_t length) {
+  if (type == WStype_CONNECTED) {
+    reportWs.sendTXT(num, reportStatusEventJson(g_report.ready ? "report_ready" : "report_wait"));
+    return;
+  }
+  if (type == WStype_TEXT) {
+    String msg;
+    for (size_t i = 0; i < length; i++) msg += (char)payload[i];
+    msg.trim();
+    if (msg == "ping" || msg == "status") {
+      reportWs.sendTXT(num, reportStatusEventJson(g_report.ready ? "report_ready" : "report_wait"));
+    }
+  }
+}
+
+void reportWebSocketLoop() {
+  if (reportWsStarted) reportWs.loop();
+}
+
 static void clearReportValues() {
   for (int i = 0; i < REPORT_MAX_NTABLE_VALUES; i++) { g_report.ntable[i].key = ""; g_report.ntable[i].value = ""; g_report.ntable[i].used = false; }
   for (int i = 0; i < REPORT_MAX_TABLE_VALUES; i++) { g_report.tables[i].table = ""; g_report.tables[i].row = 0; g_report.tables[i].value = ""; g_report.tables[i].used = false; }
@@ -89,6 +130,7 @@ static void clearReportAll() {
   g_report.templateHtml = "";
   g_report.editorJson = "";
   g_report.createdMs = 0;
+  g_report.version = reportVersionCounter;
   clearReportValues();
 }
 
@@ -174,6 +216,8 @@ static int makeActiveReport(const String& reportName) {
   g_report.templateHtml = html;
   g_report.editorJson = editor;
   g_report.createdMs = millis();
+  g_report.version = ++reportVersionCounter;
+  reportBroadcastReady();
   return id;
 }
 
@@ -232,6 +276,18 @@ static void handleReportsJs() {
   server.streamFile(file, "application/javascript; charset=utf-8"); file.close();
 }
 
+static void handleReportViewPage() {
+  File file = LittleFS.open("/report-view.html", "r");
+  if (!file) { server.send(404, "text/plain; charset=utf-8", "report-view.html не найден"); return; }
+  server.streamFile(file, "text/html; charset=utf-8"); file.close();
+}
+
+static void handleReportViewJs() {
+  File file = LittleFS.open("/report-view.js", "r");
+  if (!file) { server.send(404, "text/plain; charset=utf-8", "report-view.js не найден"); return; }
+  server.streamFile(file, "application/javascript; charset=utf-8"); file.close();
+}
+
 static void handleGetTemplates() {
   sqlite3_stmt* stmt = nullptr;
   if (!prepareReport(&stmt, "SELECT id,name,COALESCE(title,''),template_html,COALESCE(editor_json,''),is_active,created_at,updated_at FROM report_templates ORDER BY id DESC;")) return;
@@ -286,11 +342,12 @@ static void handleDeleteTemplate() {
 }
 
 static void handleCurrentReport() {
-  if (!g_report.ready) { sendReportJson(200, "{\"ok\":true,\"ready\":false}"); return; }
+  if (!g_report.ready) { sendReportJson(200, "{\"ok\":true,\"ready\":false,\"version\":" + String(g_report.version) + "}"); return; }
   String json = "{\"ok\":true,\"ready\":true";
   json += ",\"report_name\":\"" + reportJsonEscape(g_report.reportName) + "\"";
   json += ",\"template_id\":" + String(g_report.templateId);
   json += ",\"created_ms\":" + String(g_report.createdMs);
+  json += ",\"version\":" + String(g_report.version);
   json += ",\"template_html\":\"" + reportJsonEscape(g_report.templateHtml) + "\"";
   json += ",\"editor_json\":\"" + reportJsonEscape(g_report.editorJson) + "\"";
   json += ",\"data\":" + valuesToJson() + "}";
@@ -302,9 +359,18 @@ static void handleClearCurrent() { clearReportAll(); sendReportJson(200, "{\"ok\
 void registerReportHttpRoutes() {
   server.on("/reports.html", HTTP_GET, handleReportsPage);
   server.on("/reports.js", HTTP_GET, handleReportsJs);
+  server.on("/report-view.html", HTTP_GET, handleReportViewPage);
+  server.on("/report-view.js", HTTP_GET, handleReportViewJs);
   server.on("/api/reports/templates", HTTP_GET, handleGetTemplates);
   server.on("/api/reports/templates/save", HTTP_POST, handleSaveTemplate);
   server.on("/api/reports/templates/delete", HTTP_POST, handleDeleteTemplate);
   server.on("/api/reports/current", HTTP_GET, handleCurrentReport);
   server.on("/api/reports/current/clear", HTTP_POST, handleClearCurrent);
+
+  if (!reportWsStarted) {
+    reportWs.begin();
+    reportWs.onEvent(reportWsEvent);
+    reportWsStarted = true;
+    Serial.println("[REPORT] WebSocket started on port " + String(REPORT_WS_PORT));
+  }
 }
