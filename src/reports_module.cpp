@@ -14,19 +14,8 @@ extern sqlite3* db;
 #define REPORT_MAX_NAME_LEN 40
 #define REPORT_MAX_VALUE_LEN 160
 
-struct ReportNTableValue {
-  String key;
-  String value;
-  bool used;
-};
-
-struct ReportTableValue {
-  String table;
-  int row;
-  String value;
-  bool used;
-};
-
+struct ReportNTableValue { String key; String value; bool used; };
+struct ReportTableValue { String table; int row; String value; bool used; };
 struct ActiveReportState {
   bool ready;
   String reportName;
@@ -41,188 +30,281 @@ struct ActiveReportState {
 static ActiveReportState g_report;
 
 static String reportJsonEscape(const String& s) {
-  String out;
-  out.reserve(s.length() + 16);
+  String out; out.reserve(s.length() + 16);
   for (size_t i = 0; i < s.length(); i++) {
     char c = s[i];
-    switch (c) {
-      case '\\': out += "\\\\"; break;
-      case '"':  out += "\\\""; break;
-      case '\n': out += "\\n"; break;
-      case '\r': out += "\\r"; break;
-      case '\t': out += "\\t"; break;
-      default:
-        if ((uint8_t)c < 0x20) out += ' ';
-        else out += c;
-        break;
-    }
+    if (c == '\\') out += "\\\\";
+    else if (c == '"') out += "\\\"";
+    else if (c == '\n') out += "\\n";
+    else if (c == '\r') out += "\\r";
+    else if (c == '\t') out += "\\t";
+    else if ((uint8_t)c < 0x20) out += ' ';
+    else out += c;
   }
   return out;
 }
 
-static void reportSendJson(int code, const String& body) {
-  server.sendHeader("Cache-Control", "no-store");
-  server.send(code, "application/json; charset=utf-8", body);
-}
-
-static void reportSendError(int code, const String& message) {
-  reportSendJson(code, "{\"ok\":false,\"error\":\"" + reportJsonEscape(message) + "\"}");
-}
-
-static String reportColText(sqlite3_stmt* stmt, int col) {
+static String colText(sqlite3_stmt* stmt, int col) {
   const unsigned char* t = sqlite3_column_text(stmt, col);
   return t ? String((const char*)t) : "";
 }
 
-static bool reportExecSQL(const char* sql) {
-  char* errMsg = nullptr;
-  int rc = sqlite3_exec(db, sql, nullptr, nullptr, &errMsg);
-  if (rc != SQLITE_OK) {
-    Serial.print("[REPORT] SQL error: ");
-    Serial.println(errMsg ? errMsg : "unknown");
-    if (errMsg) sqlite3_free(errMsg);
-    return false;
-  }
-  return true;
+static void sendReportJson(int code, const String& body) {
+  server.sendHeader("Cache-Control", "no-store");
+  server.send(code, "application/json; charset=utf-8", body);
 }
 
-static bool reportPrepare(sqlite3_stmt** stmt, const char* sql) {
-  if (!db) {
-    reportSendError(500, "SQLite не открыт");
-    return false;
-  }
-  int rc = sqlite3_prepare_v2(db, sql, -1, stmt, nullptr);
-  if (rc != SQLITE_OK) {
-    reportSendError(500, sqlite3_errmsg(db));
-    return false;
-  }
-  return true;
+static void sendReportError(int code, const String& msg) {
+  sendReportJson(code, "{\"ok\":false,\"error\":\"" + reportJsonEscape(msg) + "\"}");
 }
 
-static bool reportBindText(sqlite3_stmt* stmt, int index, const String& value) {
-  return sqlite3_bind_text(stmt, index, value.c_str(), -1, SQLITE_TRANSIENT) == SQLITE_OK;
-}
-
-static bool reportParseJsonBody(DynamicJsonDocument& doc) {
-  if (!server.hasArg("plain")) {
-    reportSendError(400, "Нет JSON тела запроса");
-    return false;
-  }
+static bool parseReportJson(DynamicJsonDocument& doc) {
+  if (!server.hasArg("plain")) { sendReportError(400, "Нет JSON тела запроса"); return false; }
   DeserializationError err = deserializeJson(doc, server.arg("plain"));
-  if (err) {
-    reportSendError(400, "Ошибка JSON");
-    return false;
+  if (err) { sendReportError(400, "Ошибка JSON"); return false; }
+  return true;
+}
+
+static bool prepareReport(sqlite3_stmt** stmt, const char* sql) {
+  if (!db) { sendReportError(500, "SQLite не открыт"); return false; }
+  if (sqlite3_prepare_v2(db, sql, -1, stmt, nullptr) != SQLITE_OK) {
+    sendReportError(500, sqlite3_errmsg(db)); return false;
   }
   return true;
 }
 
-static String reportLimitString(const String& src, int maxLen) {
-  if ((int)src.length() <= maxLen) return src;
-  return src.substring(0, maxLen);
+static bool bindText(sqlite3_stmt* stmt, int idx, const String& v) {
+  return sqlite3_bind_text(stmt, idx, v.c_str(), -1, SQLITE_TRANSIENT) == SQLITE_OK;
 }
 
-static void reportClearValuesOnly() {
-  for (int i = 0; i < REPORT_MAX_NTABLE_VALUES; i++) {
-    g_report.ntable[i].key = "";
-    g_report.ntable[i].value = "";
-    g_report.ntable[i].used = false;
-  }
-  for (int i = 0; i < REPORT_MAX_TABLE_VALUES; i++) {
-    g_report.tables[i].table = "";
-    g_report.tables[i].row = 0;
-    g_report.tables[i].value = "";
-    g_report.tables[i].used = false;
-  }
+static void clearReportValues() {
+  for (int i = 0; i < REPORT_MAX_NTABLE_VALUES; i++) { g_report.ntable[i].key = ""; g_report.ntable[i].value = ""; g_report.ntable[i].used = false; }
+  for (int i = 0; i < REPORT_MAX_TABLE_VALUES; i++) { g_report.tables[i].table = ""; g_report.tables[i].row = 0; g_report.tables[i].value = ""; g_report.tables[i].used = false; }
 }
 
-static void reportClearAll() {
+static void clearReportAll() {
   g_report.ready = false;
   g_report.reportName = "";
   g_report.templateId = 0;
   g_report.templateHtml = "";
   g_report.editorJson = "";
   g_report.createdMs = 0;
-  reportClearValuesOnly();
+  clearReportValues();
 }
 
-static bool reportAddNTable(const String& keyRaw, const String& valueRaw) {
-  String key = keyRaw;
-  key.trim();
+static String limitString(const String& s, int maxLen) {
+  return ((int)s.length() <= maxLen) ? s : s.substring(0, maxLen);
+}
+
+static bool addNTableValue(const String& keyRaw, const String& valueRaw) {
+  String key = keyRaw; key.trim();
   if (key.length() == 0) return false;
-  key = reportLimitString(key, REPORT_MAX_NAME_LEN);
-  String value = reportLimitString(valueRaw, REPORT_MAX_VALUE_LEN);
+  key = limitString(key, REPORT_MAX_NAME_LEN);
+  String value = limitString(valueRaw, REPORT_MAX_VALUE_LEN);
   for (int i = 0; i < REPORT_MAX_NTABLE_VALUES; i++) {
-    if (g_report.ntable[i].used && g_report.ntable[i].key == key) {
-      g_report.ntable[i].value = value;
-      return true;
-    }
+    if (g_report.ntable[i].used && g_report.ntable[i].key == key) { g_report.ntable[i].value = value; return true; }
   }
   for (int i = 0; i < REPORT_MAX_NTABLE_VALUES; i++) {
-    if (!g_report.ntable[i].used) {
-      g_report.ntable[i].key = key;
-      g_report.ntable[i].value = value;
-      g_report.ntable[i].used = true;
-      return true;
-    }
+    if (!g_report.ntable[i].used) { g_report.ntable[i].key = key; g_report.ntable[i].value = value; g_report.ntable[i].used = true; return true; }
   }
   return false;
 }
 
-static bool reportAddTableValue(const String& tableRaw, int row, const String& valueRaw) {
-  String table = tableRaw;
-  table.trim();
+static bool addTableValue(const String& tableRaw, int row, const String& valueRaw) {
+  String table = tableRaw; table.trim();
   if (table.length() == 0 || row <= 0) return false;
-  table = reportLimitString(table, REPORT_MAX_NAME_LEN);
-  String value = reportLimitString(valueRaw, REPORT_MAX_VALUE_LEN);
+  table = limitString(table, REPORT_MAX_NAME_LEN);
+  String value = limitString(valueRaw, REPORT_MAX_VALUE_LEN);
   for (int i = 0; i < REPORT_MAX_TABLE_VALUES; i++) {
-    if (g_report.tables[i].used && g_report.tables[i].table == table && g_report.tables[i].row == row) {
-      g_report.tables[i].value = value;
-      return true;
-    }
+    if (g_report.tables[i].used && g_report.tables[i].table == table && g_report.tables[i].row == row) { g_report.tables[i].value = value; return true; }
   }
   for (int i = 0; i < REPORT_MAX_TABLE_VALUES; i++) {
-    if (!g_report.tables[i].used) {
-      g_report.tables[i].table = table;
-      g_report.tables[i].row = row;
-      g_report.tables[i].value = value;
-      g_report.tables[i].used = true;
-      return true;
-    }
+    if (!g_report.tables[i].used) { g_report.tables[i].table = table; g_report.tables[i].row = row; g_report.tables[i].value = value; g_report.tables[i].used = true; return true; }
   }
   return false;
 }
 
-static String reportValuesJson() {
+static String valuesToJson() {
   String json = "{\"ntable\":{";
   bool first = true;
   for (int i = 0; i < REPORT_MAX_NTABLE_VALUES; i++) {
     if (!g_report.ntable[i].used) continue;
-    if (!first) json += ",";
-    first = false;
+    if (!first) json += ","; first = false;
     json += "\"" + reportJsonEscape(g_report.ntable[i].key) + "\":\"" + reportJsonEscape(g_report.ntable[i].value) + "\"";
   }
   json += "},\"tables\":{";
   bool firstTable = true;
   for (int i = 0; i < REPORT_MAX_TABLE_VALUES; i++) {
     if (!g_report.tables[i].used) continue;
-    String tableName = g_report.tables[i].table;
+    String name = g_report.tables[i].table;
     bool done = false;
-    for (int j = 0; j < i; j++) {
-      if (g_report.tables[j].used && g_report.tables[j].table == tableName) done = true;
-    }
+    for (int j = 0; j < i; j++) if (g_report.tables[j].used && g_report.tables[j].table == name) done = true;
     if (done) continue;
-    if (!firstTable) json += ",";
-    firstTable = false;
-    json += "\"" + reportJsonEscape(tableName) + "\":{";
+    if (!firstTable) json += ","; firstTable = false;
+    json += "\"" + reportJsonEscape(name) + "\":{";
     bool firstRow = true;
     for (int k = 0; k < REPORT_MAX_TABLE_VALUES; k++) {
-      if (!g_report.tables[k].used || g_report.tables[k].table != tableName) continue;
-      if (!firstRow) json += ",";
-      firstRow = false;
+      if (!g_report.tables[k].used || g_report.tables[k].table != name) continue;
+      if (!firstRow) json += ","; firstRow = false;
       json += "\"" + String(g_report.tables[k].row) + "\":\"" + reportJsonEscape(g_report.tables[k].value) + "\"";
     }
     json += "}";
   }
   json += "}}";
   return json;
+}
+
+static bool loadTemplate(const String& name, int& id, String& html, String& editor) {
+  sqlite3_stmt* stmt = nullptr;
+  const char* sql = "SELECT id, template_html, COALESCE(editor_json,'') FROM report_templates WHERE name=? AND is_active=1 LIMIT 1;";
+  if (sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr) != SQLITE_OK) return false;
+  sqlite3_bind_text(stmt, 1, name.c_str(), -1, SQLITE_TRANSIENT);
+  bool ok = false;
+  if (sqlite3_step(stmt) == SQLITE_ROW) { id = sqlite3_column_int(stmt, 0); html = colText(stmt, 1); editor = colText(stmt, 2); ok = true; }
+  sqlite3_finalize(stmt);
+  return ok;
+}
+
+static int makeActiveReport(const String& reportName) {
+  int id = 0; String html; String editor;
+  if (!loadTemplate(reportName, id, html, editor)) return 0;
+  g_report.ready = true;
+  g_report.reportName = reportName;
+  g_report.templateId = id;
+  g_report.templateHtml = html;
+  g_report.editorJson = editor;
+  g_report.createdMs = millis();
+  return id;
+}
+
+static int luaAddNTable(lua_State* L) {
+  const char* key = luaL_checkstring(L, 1);
+  const char* value = luaL_checkstring(L, 2);
+  lua_pushboolean(L, addNTableValue(String(key), String(value)));
+  return 1;
+}
+
+static int luaAddValue(lua_State* L) {
+  const char* table = luaL_checkstring(L, 1);
+  int row = luaL_checkinteger(L, 2);
+  const char* value = luaL_checkstring(L, 3);
+  lua_pushboolean(L, addTableValue(String(table), row, String(value)));
+  return 1;
+}
+
+static int luaSendOtchet(lua_State* L) {
+  const char* name = luaL_checkstring(L, 1);
+  int id = makeActiveReport(String(name));
+  if (id > 0) lua_pushinteger(L, id);
+  else lua_pushnil(L);
+  return 1;
+}
+
+static int luaClearOtchet(lua_State* L) {
+  clearReportAll();
+  lua_pushboolean(L, true);
+  return 1;
+}
+
+void registerReportLuaFunctions(lua_State* L) {
+  lua_register(L, "add_ntable", luaAddNTable);
+  lua_register(L, "add_value", luaAddValue);
+  lua_register(L, "send_otchet", luaSendOtchet);
+  lua_register(L, "clear_otchet", luaClearOtchet);
+}
+
+void initReportDatabase() {
+  char* err = nullptr;
+  const char* sql = "CREATE TABLE IF NOT EXISTS report_templates (id INTEGER PRIMARY KEY AUTOINCREMENT,name TEXT UNIQUE NOT NULL,title TEXT,template_html TEXT NOT NULL,editor_json TEXT,is_active INTEGER DEFAULT 1,created_at TEXT DEFAULT CURRENT_TIMESTAMP,updated_at TEXT DEFAULT CURRENT_TIMESTAMP);";
+  int rc = sqlite3_exec(db, sql, nullptr, nullptr, &err);
+  if (rc != SQLITE_OK) { Serial.print("[REPORT] init error: "); Serial.println(err ? err : "unknown"); if (err) sqlite3_free(err); }
+}
+
+static void handleReportsPage() {
+  File file = LittleFS.open("/reports.html", "r");
+  if (!file) { server.send(404, "text/plain; charset=utf-8", "reports.html не найден"); return; }
+  server.streamFile(file, "text/html; charset=utf-8"); file.close();
+}
+
+static void handleReportsJs() {
+  File file = LittleFS.open("/reports.js", "r");
+  if (!file) { server.send(404, "text/plain; charset=utf-8", "reports.js не найден"); return; }
+  server.streamFile(file, "application/javascript; charset=utf-8"); file.close();
+}
+
+static void handleGetTemplates() {
+  sqlite3_stmt* stmt = nullptr;
+  if (!prepareReport(&stmt, "SELECT id,name,COALESCE(title,''),template_html,COALESCE(editor_json,''),is_active,created_at,updated_at FROM report_templates ORDER BY id DESC;")) return;
+  String json = "["; bool first = true;
+  while (sqlite3_step(stmt) == SQLITE_ROW) {
+    if (!first) json += ","; first = false;
+    json += "{\"id\":" + String(sqlite3_column_int(stmt, 0));
+    json += ",\"name\":\"" + reportJsonEscape(colText(stmt, 1)) + "\"";
+    json += ",\"title\":\"" + reportJsonEscape(colText(stmt, 2)) + "\"";
+    json += ",\"template_html\":\"" + reportJsonEscape(colText(stmt, 3)) + "\"";
+    json += ",\"editor_json\":\"" + reportJsonEscape(colText(stmt, 4)) + "\"";
+    json += ",\"is_active\":" + String(sqlite3_column_int(stmt, 5));
+    json += ",\"created_at\":\"" + reportJsonEscape(colText(stmt, 6)) + "\"";
+    json += ",\"updated_at\":\"" + reportJsonEscape(colText(stmt, 7)) + "\"}";
+  }
+  sqlite3_finalize(stmt); json += "]"; sendReportJson(200, json);
+}
+
+static void handleSaveTemplate() {
+  DynamicJsonDocument doc(20000); if (!parseReportJson(doc)) return;
+  int id = doc["id"] | 0;
+  String name = doc["name"] | ""; name.trim();
+  String title = doc["title"] | "";
+  String html = doc["template_html"] | "";
+  String editor = doc["editor_json"] | "";
+  int active = doc["is_active"] | 1;
+  if (name.length() == 0) { sendReportError(400, "Название пустое"); return; }
+  if (html.length() == 0) { sendReportError(400, "HTML шаблон пустой"); return; }
+  sqlite3_stmt* stmt = nullptr;
+  if (id > 0) {
+    if (!prepareReport(&stmt, "UPDATE report_templates SET name=?,title=?,template_html=?,editor_json=?,is_active=?,updated_at=CURRENT_TIMESTAMP WHERE id=?;")) return;
+    bindText(stmt,1,name); bindText(stmt,2,title); bindText(stmt,3,html); bindText(stmt,4,editor); sqlite3_bind_int(stmt,5,active?1:0); sqlite3_bind_int(stmt,6,id);
+  } else {
+    if (!prepareReport(&stmt, "INSERT INTO report_templates(name,title,template_html,editor_json,is_active) VALUES(?,?,?,?,?);")) return;
+    bindText(stmt,1,name); bindText(stmt,2,title); bindText(stmt,3,html); bindText(stmt,4,editor); sqlite3_bind_int(stmt,5,active?1:0);
+  }
+  int rc = sqlite3_step(stmt);
+  if (rc != SQLITE_DONE) { String e = sqlite3_errmsg(db); sqlite3_finalize(stmt); sendReportError(500, e); return; }
+  int savedId = id > 0 ? id : (int)sqlite3_last_insert_rowid(db);
+  sqlite3_finalize(stmt);
+  sendReportJson(200, "{\"ok\":true,\"id\":" + String(savedId) + "}");
+}
+
+static void handleDeleteTemplate() {
+  DynamicJsonDocument doc(1024); if (!parseReportJson(doc)) return;
+  int id = doc["id"] | 0; if (id <= 0) { sendReportError(400, "Не передан id"); return; }
+  sqlite3_stmt* stmt = nullptr; if (!prepareReport(&stmt, "DELETE FROM report_templates WHERE id=?;")) return;
+  sqlite3_bind_int(stmt,1,id);
+  int rc = sqlite3_step(stmt);
+  if (rc != SQLITE_DONE) { String e = sqlite3_errmsg(db); sqlite3_finalize(stmt); sendReportError(500, e); return; }
+  sqlite3_finalize(stmt); sendReportJson(200, "{\"ok\":true}");
+}
+
+static void handleCurrentReport() {
+  if (!g_report.ready) { sendReportJson(200, "{\"ok\":true,\"ready\":false}"); return; }
+  String json = "{\"ok\":true,\"ready\":true";
+  json += ",\"report_name\":\"" + reportJsonEscape(g_report.reportName) + "\"";
+  json += ",\"template_id\":" + String(g_report.templateId);
+  json += ",\"created_ms\":" + String(g_report.createdMs);
+  json += ",\"template_html\":\"" + reportJsonEscape(g_report.templateHtml) + "\"";
+  json += ",\"editor_json\":\"" + reportJsonEscape(g_report.editorJson) + "\"";
+  json += ",\"data\":" + valuesToJson() + "}";
+  sendReportJson(200, json);
+}
+
+static void handleClearCurrent() { clearReportAll(); sendReportJson(200, "{\"ok\":true}"); }
+
+void registerReportHttpRoutes() {
+  server.on("/reports.html", HTTP_GET, handleReportsPage);
+  server.on("/reports.js", HTTP_GET, handleReportsJs);
+  server.on("/api/reports/templates", HTTP_GET, handleGetTemplates);
+  server.on("/api/reports/templates/save", HTTP_POST, handleSaveTemplate);
+  server.on("/api/reports/templates/delete", HTTP_POST, handleDeleteTemplate);
+  server.on("/api/reports/current", HTTP_GET, handleCurrentReport);
+  server.on("/api/reports/current/clear", HTTP_POST, handleClearCurrent);
 }
