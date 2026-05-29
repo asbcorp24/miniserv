@@ -70,11 +70,38 @@ function insertAtCursor(textarea, text) {
   textarea.setSelectionRange(pos, pos);
 }
 
+function renderFullTable(tableName, tableData) {
+  const rows = Object.keys(tableData || {})
+    .map(k => ({ key: k, num: Number(k), value: tableData[k] }))
+    .sort((a, b) => {
+      if (!Number.isNaN(a.num) && !Number.isNaN(b.num)) return a.num - b.num;
+      return String(a.key).localeCompare(String(b.key));
+    });
+
+  if (!rows.length) {
+    return `<div class="text-muted">Нет данных таблицы ${escapeHtml(tableName)}</div>`;
+  }
+
+  let html = `<table class="table table-bordered table-sm report-full-table">`;
+  html += `<thead><tr><th>№</th><th>${escapeHtml(tableName)}</th></tr></thead><tbody>`;
+  rows.forEach(r => {
+    html += `<tr><td>${escapeHtml(r.key)}</td><td>${escapeHtml(r.value)}</td></tr>`;
+  });
+  html += `</tbody></table>`;
+  return html;
+}
+
 function renderReportTemplate(templateHtml, data) {
   let html = templateHtml || '';
   const ntable = data?.ntable || {};
   const tables = data?.tables || {};
 
+  // Полная таблица: {{table:volt}} — печатает все строки, пришедшие через add_value("volt", row, value)
+  html = html.replace(/\{\{\s*table\s*:\s*([a-zA-Z0-9_а-яА-ЯёЁ.-]+)\s*\}\}/g, function (_, tableName) {
+    return renderFullTable(tableName, tables[tableName] || {});
+  });
+
+  // Одна строка таблицы: {{volt[1]}}
   html = html.replace(/\{\{\s*([a-zA-Z0-9_а-яА-ЯёЁ.-]+)\s*\[\s*(\d+)\s*\]\s*\}\}/g, function (_, tableName, row) {
     if (tables[tableName] && tables[tableName][row] !== undefined) {
       return escapeHtml(tables[tableName][row]);
@@ -82,6 +109,7 @@ function renderReportTemplate(templateHtml, data) {
     return '';
   });
 
+  // Обычное значение: {{amper}}
   html = html.replace(/\{\{\s*([a-zA-Z0-9_а-яА-ЯёЁ.-]+)\s*\}\}/g, function (_, key) {
     if (ntable[key] !== undefined) {
       return escapeHtml(ntable[key]);
@@ -113,7 +141,7 @@ function newTemplate() {
   document.getElementById('tplId').value = '';
   document.getElementById('tplName').value = 'Электрический отчёт';
   document.getElementById('tplTitle').value = 'Отчёт измерений';
-  document.getElementById('tplHtml').value = `<h2>Отчёт измерений</h2>\n\n<p><b>Ток:</b> {{amper}}</p>\n<p><b>Температура:</b> {{temperature}}</p>\n\n<table class="table table-bordered table-sm">\n  <thead>\n    <tr><th>№</th><th>Напряжение</th></tr>\n  </thead>\n  <tbody>\n    <tr><td>1</td><td>{{volt[1]}}</td></tr>\n    <tr><td>2</td><td>{{volt[2]}}</td></tr>\n    <tr><td>3</td><td>{{volt[3]}}</td></tr>\n  </tbody>\n</table>`;
+  document.getElementById('tplHtml').value = `<h2>Отчёт измерений</h2>\n\n<p><b>Ток:</b> {{amper}}</p>\n<p><b>Температура:</b> {{temperature}}</p>\n\n<h3>Полная таблица напряжения</h3>\n{{table:volt}}`;
 }
 
 function editTemplate(id) {
@@ -224,7 +252,7 @@ th,td{border:1px solid #444;padding:6px 8px;text-align:left;}
 th{background:#eee;}
 h1,h2,h3{margin-top:0;}
 .report-meta{font-size:12px;color:#666;margin-bottom:16px;}
-@media print{body{margin:12mm}.no-print{display:none!important}}
+@media print{body{margin:12mm}.no-print{display:none!important}table{page-break-inside:auto}tr{page-break-inside:avoid;page-break-after:auto}thead{display:table-header-group}}
 </style>
 </head>
 <body>
@@ -288,6 +316,13 @@ function addTableBlock() {
   insertAtCursor(document.getElementById('tplHtml'), html);
 }
 
+function addFullTableBlock() {
+  const table = prompt('Имя таблицы из add_value("имя", row, value)', 'volt');
+  if (!table) return;
+  const title = prompt('Заголовок таблицы', table) || table;
+  insertAtCursor(document.getElementById('tplHtml'), `\n<h3>${escapeHtml(title)}</h3>\n{{table:${table}}}\n`);
+}
+
 function addLineBlock() {
   insertAtCursor(document.getElementById('tplHtml'), '\n<hr>\n');
 }
@@ -306,6 +341,7 @@ function bindEvents() {
   document.getElementById('addText').addEventListener('click', addTextBlock);
   document.getElementById('addNtable').addEventListener('click', addNtableBlock);
   document.getElementById('addTable').addEventListener('click', addTableBlock);
+  document.getElementById('addFullTable').addEventListener('click', addFullTableBlock);
   document.getElementById('addLine').addEventListener('click', addLineBlock);
   document.getElementById('templateSearch').addEventListener('input', loadTemplates);
 }
