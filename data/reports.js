@@ -79,19 +79,6 @@ function sortedKeys(obj) {
   });
 }
 
-function renderNTable(ntable) {
-  const keys = sortedKeys(ntable);
-  if (!keys.length) return '<div class="text-muted">Обычных значений add_ntable() нет</div>';
-
-  let html = '<table class="table table-bordered table-sm report-ntable">';
-  html += '<thead><tr><th>Параметр</th><th>Значение</th></tr></thead><tbody>';
-  keys.forEach(key => {
-    html += `<tr><td>${escapeHtml(key)}</td><td>${escapeHtml(ntable[key])}</td></tr>`;
-  });
-  html += '</tbody></table>';
-  return html;
-}
-
 function renderFullTable(tableName, tableData) {
   const rows = sortedKeys(tableData).map(k => ({ key: k, value: tableData[k] }));
 
@@ -108,25 +95,41 @@ function renderFullTable(tableName, tableData) {
   return html;
 }
 
-function renderAllReportData(data) {
-  const ntable = data?.ntable || {};
-  const tables = data?.tables || {};
+function renderAllAddValueTable(tables) {
   const tableNames = sortedKeys(tables);
-
-  let html = '<div class="report-all-data">';
-  html += '<h3>Общие значения</h3>';
-  html += renderNTable(ntable);
-
   if (!tableNames.length) {
-    html += '<h3>Таблицы измерений</h3><div class="text-muted">Таблиц add_value() нет</div>';
-  } else {
-    tableNames.forEach(name => {
-      html += `<h3>${escapeHtml(name)}</h3>`;
-      html += renderFullTable(name, tables[name]);
-    });
+    return '<div class="text-muted">Данных add_value() нет</div>';
   }
 
-  html += '</div>';
+  const rowSet = new Set();
+  tableNames.forEach(name => {
+    sortedKeys(tables[name]).forEach(row => rowSet.add(row));
+  });
+
+  const rows = Array.from(rowSet).sort((a, b) => {
+    const an = Number(a);
+    const bn = Number(b);
+    if (!Number.isNaN(an) && !Number.isNaN(bn)) return an - bn;
+    return String(a).localeCompare(String(b));
+  });
+
+  let html = '<table class="table table-bordered table-sm report-all-values-table">';
+  html += '<thead><tr><th>№</th>';
+  tableNames.forEach(name => {
+    html += `<th>${escapeHtml(name)}</th>`;
+  });
+  html += '</tr></thead><tbody>';
+
+  rows.forEach(row => {
+    html += `<tr><td>${escapeHtml(row)}</td>`;
+    tableNames.forEach(name => {
+      const value = tables[name] && tables[name][row] !== undefined ? tables[name][row] : '';
+      html += `<td>${escapeHtml(value)}</td>`;
+    });
+    html += '</tr>';
+  });
+
+  html += '</tbody></table>';
   return html;
 }
 
@@ -135,17 +138,18 @@ function renderReportTemplate(templateHtml, data) {
   const ntable = data?.ntable || {};
   const tables = data?.tables || {};
 
-  // Все данные отчёта: {{table:all}} — add_ntable() + все таблицы add_value()
+  // Все значения из add_value(): {{table:all}}
+  // Печатает одну общую таблицу: строки = row, колонки = имена из add_value(name, row, value)
   html = html.replace(/\{\{\s*table\s*:\s*all\s*\}\}/gi, function () {
-    return renderAllReportData(data);
+    return renderAllAddValueTable(tables);
   });
 
-  // Полная таблица: {{table:volt}} — все строки одной таблицы add_value("volt", row, value)
+  // Одна полная таблица: {{table:volt}}
   html = html.replace(/\{\{\s*table\s*:\s*([a-zA-Z0-9_а-яА-ЯёЁ.-]+)\s*\}\}/g, function (_, tableName) {
     return renderFullTable(tableName, tables[tableName] || {});
   });
 
-  // Одна строка таблицы: {{volt[1]}}
+  // Одна ячейка таблицы: {{volt[1]}}
   html = html.replace(/\{\{\s*([a-zA-Z0-9_а-яА-ЯёЁ.-]+)\s*\[\s*(\d+)\s*\]\s*\}\}/g, function (_, tableName, row) {
     if (tables[tableName] && tables[tableName][row] !== undefined) {
       return escapeHtml(tables[tableName][row]);
@@ -153,7 +157,7 @@ function renderReportTemplate(templateHtml, data) {
     return '';
   });
 
-  // Обычное значение: {{amper}}
+  // Обычное значение из add_ntable(): {{amper}}
   html = html.replace(/\{\{\s*([a-zA-Z0-9_а-яА-ЯёЁ.-]+)\s*\}\}/g, function (_, key) {
     if (ntable[key] !== undefined) {
       return escapeHtml(ntable[key]);
@@ -167,7 +171,6 @@ function renderReportTemplate(templateHtml, data) {
 function sampleData() {
   return {
     ntable: {
-      amper: '23',
       temperature: '25.4 C',
       status: 'Норма'
     },
@@ -177,10 +180,15 @@ function sampleData() {
         '2': '12.0 V',
         '3': '11.9 V'
       },
-      amper_table: {
+      amper: {
         '1': '22.9 A',
         '2': '23.0 A',
         '3': '23.1 A'
+      },
+      power: {
+        '1': '277 W',
+        '2': '276 W',
+        '3': '274 W'
       }
     }
   };
@@ -190,7 +198,7 @@ function newTemplate() {
   document.getElementById('tplId').value = '';
   document.getElementById('tplName').value = 'Электрический отчёт';
   document.getElementById('tplTitle').value = 'Отчёт измерений';
-  document.getElementById('tplHtml').value = `<h2>Отчёт измерений</h2>\n\n<p><b>Ток:</b> {{amper}}</p>\n<p><b>Температура:</b> {{temperature}}</p>\n\n<h3>Все данные отчёта</h3>\n{{table:all}}`;
+  document.getElementById('tplHtml').value = `<h2>Отчёт измерений</h2>\n\n<p><b>Температура:</b> {{temperature}}</p>\n\n<h3>Все значения из add_value()</h3>\n{{table:all}}`;
 }
 
 function editTemplate(id) {
@@ -347,7 +355,7 @@ function addTextBlock() {
 }
 
 function addNtableBlock() {
-  const key = prompt('Имя значения из add_ntable("имя", "значение")', 'amper');
+  const key = prompt('Имя значения из add_ntable("имя", "значение")', 'temperature');
   if (!key) return;
   const label = prompt('Подпись', key) || key;
   insertAtCursor(document.getElementById('tplHtml'), `\n<p><b>${escapeHtml(label)}:</b> {{${key}}}</p>\n`);
@@ -373,7 +381,7 @@ function addFullTableBlock() {
 }
 
 function addAllDataBlock() {
-  insertAtCursor(document.getElementById('tplHtml'), '\n<h3>Все данные отчёта</h3>\n{{table:all}}\n');
+  insertAtCursor(document.getElementById('tplHtml'), '\n<h3>Все значения из add_value()</h3>\n{{table:all}}\n');
 }
 
 function addLineBlock() {
